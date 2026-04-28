@@ -5,6 +5,11 @@ variable "project_id" {
   type        = string
 }
 
+variable "project_number" {
+  description = "The GCP project number."
+  type        = string
+}
+
 variable "name_prefix" {
   description = "Prefix for resource names."
   type        = string

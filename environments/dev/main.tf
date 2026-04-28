@@ -84,6 +84,7 @@ resource "google_secret_manager_secret" "sendgrid_api_key" {
 module "pubsub" {
   source      = "../../modules/pubsub"
   project_id  = var.project_id
+  project_number = data.google_project.current.number
   name_prefix = local.name_prefix
   labels      = local.labels
 
