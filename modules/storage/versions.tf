@@ -1,7 +1,7 @@
 # modules/storage/versions.tf
 
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.13.1"
 
   required_providers {
     google = {
