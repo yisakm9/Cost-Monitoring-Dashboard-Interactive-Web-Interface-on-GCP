@@ -140,13 +140,13 @@ jobs:
             })
 
       - name: 'Terraform Apply'
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
         run: terraform apply -auto-approve tfplan
         working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: 'Export Terraform Outputs'
         id: set-outputs
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
         run: |
           bucket_name=$(terraform output -raw frontend_bucket_name)
           api_url=$(terraform output -raw cost_api_function_url)
@@ -161,7 +161,7 @@ jobs:
     name: '🚀 Deploy Frontend'
     runs-on: ubuntu-latest
     needs: terraform
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
 
     env:
       GCS_BUCKET_NAME: ${{ needs.terraform.outputs.bucket_name }}
