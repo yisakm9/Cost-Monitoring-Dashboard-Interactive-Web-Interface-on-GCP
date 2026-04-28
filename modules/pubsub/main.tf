@@ -26,5 +26,5 @@ resource "google_pubsub_topic_iam_member" "billing_publisher" {
   project = var.project_id
   topic   = google_pubsub_topic.budget_alerts.name
   role    = "roles/pubsub.publisher"
-  member  = "serviceAccount:billing-export@system.gserviceaccount.com"
+  member  = "serviceAccount:billing-precision@system.gserviceaccount.com"
 }
