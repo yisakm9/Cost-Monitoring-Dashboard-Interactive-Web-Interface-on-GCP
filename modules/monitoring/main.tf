@@ -30,7 +30,7 @@ resource "google_billing_budget" "monthly_budget" {
 
   amount {
     specified_amount {
-      currency_code = "USD"
+      currency_code = "HKD"
       units         = tostring(var.budget_amount)
     }
   }
