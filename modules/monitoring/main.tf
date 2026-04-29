@@ -61,7 +61,6 @@ resource "google_billing_budget" "monthly_budget" {
     monitoring_notification_channels = [
       google_monitoring_notification_channel.email.id
     ]
-    pubsub_topic   = var.budget_alerts_topic_id
     schema_version = "1.0"
   }
 }
