@@ -28,10 +28,6 @@ resource "google_billing_budget" "monthly_budget" {
   billing_account = var.billing_account_id
   display_name    = "${var.name_prefix}-monthly-budget"
 
-  budget_filter {
-    projects = ["projects/${var.project_number}"]
-  }
-
   amount {
     specified_amount {
       currency_code = "USD"
@@ -65,9 +61,8 @@ resource "google_billing_budget" "monthly_budget" {
     monitoring_notification_channels = [
       google_monitoring_notification_channel.email.id
     ]
-    pubsub_topic                    = var.budget_alerts_topic_id
-    schema_version                  = "1.0"
-    enable_project_level_recipients = true
+    pubsub_topic   = var.budget_alerts_topic_id
+    schema_version = "1.0"
   }
 }
 
