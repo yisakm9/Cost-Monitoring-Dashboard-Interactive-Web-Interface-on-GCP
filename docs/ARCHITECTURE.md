@@ -1,107 +1,79 @@
-# Architecture Decision Record — GCP Cloud Cost Calculator
+# Architecture Decision Record (ADR)
 
-## ADR-001: Migration from AWS to GCP
+## Context
+The goal of this project was to migrate an existing cloud cost calculation and alerting system from AWS to Google Cloud Platform (GCP). The system must provide a dashboard for cost visibility, issue alerts when spending limits are breached, and send automated weekly cost summaries via email. The infrastructure must be fully automated, secure, and cost-effective (ideally serverless).
 
-**Status:** Accepted
-**Date:** 2026-04-28
-**Context:** The original Cloud Cost Calculator was built on AWS using Lambda, API Gateway, S3, CloudFront, CloudWatch, SNS, SES, and KMS. The goal was to rebuild it as a production-grade GCP-native project demonstrating equivalent or superior cloud engineering practices.
+## Decisions
 
----
+### 1. Compute & API Backend
+*   **Decision:** Use Cloud Functions (2nd Gen)
+*   **Alternatives Considered:** Cloud Run (custom containers), App Engine, Compute Engine (VMs).
+*   **Rationale:** Cloud Functions Gen2 are built on top of Cloud Run and Eventarc, providing the perfect balance of "code-only" deployments without needing to write Dockerfiles, while still getting the concurrency and larger instance sizes of Cloud Run. The scale-to-zero capability ensures that we pay absolutely nothing when the dashboard or weekly report is not being triggered.
 
-## Architecture Overview
+### 2. Frontend Hosting & CDN
+*   **Decision:** Cloud Storage (static hosting) + External Application Load Balancer + Cloud CDN
+*   **Alternatives Considered:** Firebase Hosting, App Engine.
+*   **Rationale:** Cloud Storage provides a highly durable, zero-maintenance object store for static assets (HTML/JS/CSS). Fronting it with a Global Load Balancer and Cloud CDN allows us to cache the assets at the edge, reducing latency globally and protecting the origin bucket. It also provides a single Anycast IP address to route traffic to both the static assets (via backend bucket) and the Cloud Function API (via serverless NEG).
 
-### Design Principles
+### 3. Cost Data Source
+*   **Decision:** BigQuery (Cloud Billing Export)
+*   **Alternatives Considered:** Cloud Billing REST API.
+*   **Rationale:** The Cloud Billing REST API does not provide granular, per-service daily cost breakdowns dynamically. By exporting billing data to BigQuery, we can use standard SQL to perform advanced analytics, filter out microscopic costs, sum credits dynamically, and group by specific time intervals.
 
-1. **Serverless-First** — All compute runs on Cloud Functions (Gen2) with scale-to-zero. No VMs, no containers to manage.
-2. **Event-Driven** — Cloud Scheduler → Pub/Sub → Cloud Functions for the reporting pipeline. Budget alerts flow through Pub/Sub → Cloud Monitoring.
-3. **Infrastructure as Code** — 100% of infrastructure defined in 9 modular Terraform modules. Zero manual console clicks.
-4. **Least Privilege** — Each Cloud Function has a dedicated service account with only the permissions it needs.
-5. **Defense in Depth** — Cloud KMS encryption, Secret Manager for API keys, Checkov security scanning in CI.
+### 4. Alerting & Email
+*   **Decision:** Native GCP Budgets (for thresholds) + SendGrid (for custom reports)
+*   **Alternatives Considered:** Compute Engine SMTP relays, Amazon SES.
+*   **Rationale:** GCP does not have a native email-sending service equivalent to AWS SES. For native threshold alerts (50%, 80%, 100%), GCP Budgets natively integrate with Cloud Monitoring Notification Channels to send basic emails. For our stylized weekly summary report, we use SendGrid via a REST API call from a Cloud Function, as it is the industry standard for reliable transactional email delivery on GCP.
 
----
+### 5. Authentication & Security
+*   **Decision:** Workload Identity Federation (WIF)
+*   **Alternatives Considered:** Service Account JSON Keys stored in GitHub Secrets.
+*   **Rationale:** Storing long-lived cryptographic keys in third-party CI/CD systems is a security anti-pattern. WIF allows GitHub Actions to authenticate to GCP dynamically using OpenID Connect (OIDC) tokens, eliminating the risk of credential leakage.
 
-## Service Selection Rationale
+## Current State Architecture Map
 
-### Compute: Cloud Functions (Gen2) over Cloud Run
+```mermaid
+graph TB
+    subgraph "Client Tier"
+        Browser["User Browser"]
+    end
 
-Cloud Functions Gen2 was chosen over Cloud Run because:
-- The workload is pure request/response (API) and event-triggered (report) — no long-running processes
-- Gen2 provides built-in HTTP endpoints (no API Gateway needed)
-- Gen2 supports Pub/Sub triggers natively via Eventarc
-- Scale-to-zero reduces cost to near-zero during idle periods
+    subgraph "GCP Global Infrastructure"
+        GLB["Global HTTP(S) Load Balancer"]
+        CDN["Cloud CDN"]
+    end
 
-### Data: BigQuery Billing Export over Cloud Billing API
+    subgraph "Static Hosting Layer"
+        GCS["Cloud Storage Bucket"]
+    end
 
-BigQuery billing export was chosen because:
-- It provides granular, service-level cost breakdowns (the Cloud Billing API does not)
-- Supports arbitrary date ranges and SQL-based analysis
-- Data is automatically exported — no polling required
-- First 1TB of queries per month is free
+    subgraph "Compute Layer (Serverless)"
+        CF_API["Cloud Function (API)"]
+        CF_RPT["Cloud Function (Report)"]
+    end
 
-### CDN: Cloud CDN + Global LB over Firebase Hosting
+    subgraph "Data & Analytics"
+        BQ["BigQuery"]
+    end
 
-The Global HTTP(S) Load Balancer with Cloud CDN was chosen because:
-- URL-based routing enables both frontend (/*) and API (/costs) on a single IP
-- Cloud CDN provides automatic caching for static assets
-- The Load Balancer supports future HTTPS + custom domain upgrades
-- It demonstrates enterprise-grade networking (vs. Firebase's simpler model)
+    subgraph "Event Management"
+        SCHED["Cloud Scheduler"]
+        PS["Pub/Sub"]
+    end
 
-### Email: SendGrid over Native GCP
-
-SendGrid was chosen because:
-- GCP has no native email delivery service equivalent to AWS SES
-- SendGrid offers a free tier (100 emails/day)
-- The API key is stored securely in Secret Manager and injected at runtime
-
-### Scheduling: Cloud Scheduler + Pub/Sub over Direct HTTP
-
-The Cloud Scheduler → Pub/Sub → Cloud Function pattern was chosen because:
-- Pub/Sub provides automatic retries with exponential backoff
-- The Cloud Function doesn't need to be publicly accessible (ingress: ALLOW_INTERNAL_ONLY)
-- Decouples the trigger from the execution for better observability
-
----
-
-## Security Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│                  Security Layers                 │
-├─────────────────────────────────────────────────┤
-│  CI/CD Auth    │ Workload Identity Federation   │
-│                │ (OIDC — no service account keys)│
-├────────────────┼────────────────────────────────┤
-│  Secrets       │ Secret Manager                  │
-│                │ (SendGrid key never in code)     │
-├────────────────┼────────────────────────────────┤
-│  Encryption    │ Cloud KMS                       │
-│                │ (auto-rotation every 90 days)    │
-├────────────────┼────────────────────────────────┤
-│  IAM           │ 2 dedicated service accounts    │
-│                │ (least-privilege bindings)       │
-├────────────────┼────────────────────────────────┤
-│  Network       │ Report function: INTERNAL_ONLY  │
-│                │ API function: Public (read-only) │
-├────────────────┼────────────────────────────────┤
-│  Code Scanning │ TFLint + Checkov in CI pipeline │
-├────────────────┼────────────────────────────────┤
-│  State         │ GCS with versioning enabled     │
-└────────────────┴────────────────────────────────┘
+    Browser -->|HTTPS Request| GLB
+    GLB -->|Cache hit/miss| CDN
+    CDN -->|Path: /*| GCS
+    CDN -->|Path: /costs| CF_API
+    
+    CF_API -->|SQL Query| BQ
+    
+    SCHED -->|Cron Schedule| PS
+    PS -->|Eventarc Push| CF_RPT
+    CF_RPT -->|SQL Query| BQ
+    CF_RPT -->|REST API Call| SendGrid["SendGrid API"]
 ```
 
----
-
-## Cost Analysis
-
-The GCP version is significantly cheaper than the AWS version:
-
-| Component | AWS Cost | GCP Cost | Savings |
-|-----------|---------|---------|---------|
-| Compute (Lambda vs Functions) | ~$10-16 | ~$0-2 | 80-100% |
-| CDN (CloudFront vs Cloud CDN) | ~$1-5 | Included in LB | 100% |
-| Load Balancer | N/A (CloudFront) | ~$18 | — |
-| Data queries | $0 (Cost Explorer API) | ~$0-1 (BigQuery) | — |
-| Storage | ~$0.50 | ~$0.01 | 98% |
-| **Total** | **~$45-55** | **~$18-22** | **~60%** |
-
-The main cost driver is the Global HTTP(S) Load Balancer ($18/month). For a development environment, this could be eliminated by using the Cloud Function URL directly.
+## Consequences
+*   **Positive:** Highly scalable, zero-maintenance, virtually free to run, secure by default.
+*   **Negative:** BigQuery billing export introduces a slight delay (costs are not real-time to the minute, usually delayed by a few hours). We also have an external dependency on SendGrid for the custom weekly emails.
