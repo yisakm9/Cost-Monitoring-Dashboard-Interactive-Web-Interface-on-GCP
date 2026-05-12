@@ -12,58 +12,58 @@
 
 ```mermaid
 graph TB
-    subgraph "Internet"
-        User["👤 User / Browser"]
+    subgraph Internet
+        User["User / Browser"]
     end
 
-    subgraph "Google Cloud Platform — us-central1"
-        subgraph "Global Layer"
-            GLB["Global HTTP(S) Load Balancer<br/>Static IP + Cloud CDN"]
+    subgraph GCP ["Google Cloud Platform - us-central1"]
+        subgraph GlobalLayer ["Global Layer"]
+            GLB["Global HTTPS Load Balancer\nStatic IP + Cloud CDN"]
         end
 
-        subgraph "Frontend"
-            GCS["Cloud Storage<br/>Static Website Assets"]
+        subgraph Frontend
+            GCS["Cloud Storage\nStatic Website Assets"]
         end
 
-        subgraph "Serverless Backend"
-            CF_API["Cloud Function (Gen2)<br/>GetCostDataApi<br/>HTTP-triggered"]
-            CF_RPT["Cloud Function (Gen2)<br/>GetWeeklyCostReport<br/>Pub/Sub-triggered"]
+        subgraph ServerlessBackend ["Serverless Backend"]
+            CF_API["Cloud Function Gen2\nGetCostDataApi\nHTTP-triggered"]
+            CF_RPT["Cloud Function Gen2\nGetWeeklyCostReport\nPubSub-triggered"]
         end
 
-        subgraph "Data Layer"
-            BQ["BigQuery<br/>Billing Export Dataset"]
+        subgraph DataLayer ["Data Layer"]
+            BQ["BigQuery\nBilling Export Dataset"]
         end
 
-        subgraph "Scheduling & Events"
-            SCHED["Cloud Scheduler<br/>Weekly Cron Job"]
-            PS_RPT["Pub/Sub Topic<br/>Report Trigger"]
-            PS_BDG["Pub/Sub Topic<br/>Budget Alerts"]
+        subgraph Events ["Scheduling and Events"]
+            SCHED["Cloud Scheduler\nWeekly Cron Job"]
+            PS_RPT["PubSub Topic\nReport Trigger"]
+            PS_BDG["PubSub Topic\nBudget Alerts"]
         end
 
-        subgraph "Monitoring & Alerting"
-            MON["Cloud Monitoring<br/>3 Alert Policies"]
-            BUDGET["Cloud Billing Budget<br/>50% / 80% / 100% Alerts"]
-            EMAIL["📧 Email Notification Channel"]
+        subgraph Monitoring ["Monitoring and Alerting"]
+            MON["Cloud Monitoring\n3 Alert Policies"]
+            BUDGET["Cloud Billing Budget\n50% / 80% / 100% Alerts"]
+            EMAIL["Email Notification Channel"]
         end
 
-        subgraph "Security"
-            IAM["IAM Service Accounts<br/>Least Privilege"]
-            SM["Secret Manager<br/>SendGrid API Key"]
-            KMS["Cloud KMS<br/>Encryption Keys"]
+        subgraph Security
+            IAM["IAM Service Accounts\nLeast Privilege"]
+            SM["Secret Manager\nSendGrid API Key"]
+            KMS["Cloud KMS\nEncryption Keys"]
         end
     end
 
-    subgraph "External Services"
-        SG["SendGrid<br/>Email Delivery"]
+    subgraph External ["External Services"]
+        SG["SendGrid\nEmail Delivery"]
     end
 
-    subgraph "CI/CD"
-        GH["GitHub Actions<br/>Workload Identity Federation"]
+    subgraph CICD ["CI/CD"]
+        GH["GitHub Actions\nWorkload Identity Federation"]
     end
 
-    User -->|HTTP| GLB
-    GLB -->|"/* routes"| GCS
-    GLB -->|"/costs route"| CF_API
+    User -->|HTTPS| GLB
+    GLB -->|static assets| GCS
+    GLB -->|API request| CF_API
     CF_API -->|Query| BQ
     SCHED -->|Publish| PS_RPT
     PS_RPT -->|Trigger| CF_RPT
@@ -74,7 +74,10 @@ graph TB
     PS_BDG -->|Notify| MON
     MON -->|Alert| EMAIL
     SM -->|Inject Key| CF_RPT
-    GH -->|Deploy| GLB & GCS & CF_API & CF_RPT
+    GH -->|Deploy| GLB
+    GH -->|Deploy| GCS
+    GH -->|Deploy| CF_API
+    GH -->|Deploy| CF_RPT
 ```
 
 ---
